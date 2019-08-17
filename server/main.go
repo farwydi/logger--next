@@ -54,8 +54,9 @@ func main() {
 
     go func() {
         // service connections
+        fmt.Printf("%v Start http server endpoint\n", time.Now())
         if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            fmt.Fprintf(os.Stderr, "Listen: %s\n", err)
+            fmt.Fprintf(os.Stderr, "%v Listen: %s\n", time.Now(), err)
         }
     }()
 
@@ -63,17 +64,17 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
     <-quit
-    fmt.Println("Shutdown server ...")
+    fmt.Printf("%v Shutdown server ...\n", time.Now())
 
     ctx, cancel := context.WithTimeout(context.Background(), time.Second)
     defer cancel()
     if err := srv.Shutdown(ctx); err != nil {
-        fmt.Fprintf(os.Stderr, "Server shutdown: %s", err)
+        fmt.Fprintf(os.Stderr, "%v Server shutdown: %s", time.Now(), err)
     }
 
     select {
     case <-ctx.Done():
-        fmt.Println("Timeout shutdown")
+        fmt.Printf("%v Timeout shutdown\n", time.Now())
     }
-    fmt.Println("Server exiting")
+    fmt.Printf("%v Server exiting\n", time.Now())
 }

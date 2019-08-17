@@ -8,7 +8,6 @@ import (
     "go.uber.org/zap"
     "go.uber.org/zap/zapcore"
     "math/rand"
-    "net"
     "os"
     "sync"
     "time"
@@ -25,10 +24,6 @@ func NewWriter(url, addr string, rate time.Duration) *NetworkWriter {
             MaxConns:                 10,
             MaxIdleConnDuration:      time.Second * 10,
             NoDefaultUserAgentHeader: true,
-            Dial: func(addr string) (conn net.Conn, e error) {
-                //fmt.Println("Dial")
-                return fasthttp.Dial(addr)
-            },
         },
         url:    url,
         buffer: reallocate(),

@@ -5,6 +5,7 @@ import (
     "os"
     "path/filepath"
     "sync"
+    "sync/atomic"
     "syscall"
     "time"
 )
@@ -33,10 +34,10 @@ func (lf *logFile) close() {
 
 func (lf *logFile) register(buffer []byte) {
     lf.mxRAMOps.Lock()
-    {
-        lf.ram = append(lf.ram, buffer...)
-    }
-    lf.mxRAMOps.Unlock()
+    defer lf.mxRAMOps.Unlock()
+    lf.ram = append(lf.ram, buffer...)
+
+    atomic.AddUint32(&db.usesRam, uint32(len(buffer)))
 }
 
 func reallocate() []byte {
@@ -76,13 +77,14 @@ func (lf *logFile) margeFromRam() {
         {
             lf.mxRAMOps.Lock()
             {
-                _, err := lf.file.Write(lf.ram)
+                n, err := lf.file.Write(lf.ram)
                 if err != nil {
                     lf.mxRAMOps.Unlock()
                     lf.mxFileOps.Unlock()
                     close(lf.done)
                     return
                 }
+                atomic.AddUint32(&db.usesRam, -uint32(n))
                 lf.ram = reallocate()
             }
             lf.mxRAMOps.Unlock()
