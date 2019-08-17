@@ -12,11 +12,13 @@ import (
 )
 
 // 50 Kb
-const readBufferSize = 50 << (10 * 1)
+const maxScannerBufferSize = 50 << (10 * 1)
+// 500 b
+const capScannerBufferSize = 500
 
 // 4 Mb
 const rawFileSize = 4 << (10 * 2)
-const rateWriteSpeed = time.Second
+const mergeSpeedRate = time.Second
 
 const flagDefault = os.O_CREATE | os.O_RDWR | os.O_APPEND
 const permDefault = 0644
@@ -59,7 +61,7 @@ func (lf *logFile) walk(f func(line []byte)) error {
     //    return err
     //}
     scanner := bufio.NewScanner(lf.file)
-    scanner.Buffer(make([]byte, 0, 100),  readBufferSize)
+    scanner.Buffer(make([]byte, 0, capScannerBufferSize), maxScannerBufferSize)
     for scanner.Scan() {
         f(scanner.Bytes())
     }
@@ -109,7 +111,7 @@ func (lf *logFile) margeFromRam() {
 
 func (lf *logFile) pusher() {
     doneTimer := make(chan struct{})
-    timeTrigger := time.NewTicker(rateWriteSpeed)
+    timeTrigger := time.NewTicker(mergeSpeedRate)
 
     go func() {
         for {
