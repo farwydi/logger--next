@@ -3,18 +3,12 @@ package main
 import (
     "bytes"
     "errors"
-    "fmt"
     "path/filepath"
     "sync"
-    "sync/atomic"
     "time"
 )
 
-const maxOpenFilesDefault = 1000000
-const rateGCRam = time.Second * 10
-
-// 4 Gb
-const maxRamBuffer = 4 << 10 * 3
+const maxOpenLogDuration = time.Second * 10
 
 var (
     ErrShutdownNow = errors.New("shutdown now")
@@ -43,18 +37,13 @@ func newDatabase() *database {
 
     go func() {
         doneTimer := make(chan struct{})
-        timeGCRam := time.NewTicker(rateGCRam)
+        timeGCRam := time.NewTicker(maxOpenLogDuration)
 
         go func() {
             for {
                 select {
                 case <-timeGCRam.C:
-                    usesRam := atomic.LoadUint32(&db.usesRam)
-                    fmt.Printf("ram: %d\n", usesRam)
-                    for usesRam > maxRamBuffer {
-                        db.closeOneOldOpenLogFile()
-                        usesRam = atomic.LoadUint32(&db.usesRam)
-                    }
+                    db.closeLongOpenLogFile()
                 case <-doneTimer:
                     return
                 }
@@ -73,43 +62,27 @@ func newDatabase() *database {
     return db
 }
 
-func (d *database) closeOneOldOpenLogFile() {
+func (d *database) closeLongOpenLogFile() {
     db.mx.Lock()
     defer db.mx.Unlock()
 
-    var lfLastOpen time.Time
-    var keyToClose uint32
     for k, lf := range d.logFiles {
-        if lf.file != nil && lfLastOpen.After(lf.openTime) {
-            keyToClose = k
+        if lf.file != nil && time.Since(lf.lastOps) > maxOpenLogDuration {
+            lf.close()
+            delete(d.logFiles, k)
         }
     }
-    d.logFiles[keyToClose].close()
-    delete(d.logFiles, keyToClose)
 }
 
 func (d *database) initLogFile(service, file string, key uint32) (lf *logFile, err error) {
     db.mx.Lock()
     defer db.mx.Unlock()
 
-    if len(d.logFiles) > maxOpenFilesDefault {
-        d.closeOneOldOpenLogFile()
-    }
-
     lf = &logFile{
-        done:     make(chan struct{}),
-        ram:      reallocate(),
         key:      key,
         location: filepath.Join(d.basePath, service, file+".db"),
     }
-    if err := lf.open(); err == nil {
-        // Запуск пушера
-        go lf.pusher()
-
-        d.logFiles[key] = lf
-    } else {
-        return nil, err
-    }
+    d.logFiles[key] = lf
 
     return lf, nil
 }
@@ -140,6 +113,5 @@ func (d *database) registerBuffer(service, file string, buffer *bytes.Buffer) er
         return err
     }
 
-    lf.register(buffer.Bytes())
-    return nil
+    return lf.register(buffer.Bytes())
 }

@@ -6,13 +6,13 @@ import (
     "os"
     "path/filepath"
     "sync"
-    "sync/atomic"
     "syscall"
     "time"
 )
 
 // 50 Kb
 const maxScannerBufferSize = 50 << (10 * 1)
+
 // 500 b
 const capScannerBufferSize = 500
 
@@ -25,108 +25,78 @@ const permDefault = 0644
 
 type logFile struct {
     mxFileOps sync.Mutex
-    mxRAMOps  sync.Mutex
     location  string
-    openTime  time.Time
-    lastMerge time.Time
+    lastOps   time.Time
     file      *os.File
-    ram       []byte
     key       uint32
-    done      chan struct{}
 }
 
 func (lf *logFile) close() {
     fmt.Printf("close log, %d\n", lf.key)
-    close(lf.done)
+
+    if lf.file != nil {
+        lf.file.Close()
+    }
 }
 
-func (lf *logFile) register(buffer []byte) {
-    lf.mxRAMOps.Lock()
-    defer lf.mxRAMOps.Unlock()
-    lf.ram = append(lf.ram, buffer...)
+func (lf *logFile) register(buffer []byte) error {
+    if lf.file == nil {
+        err := lf.open()
+        if err != nil {
+            return err
+        }
+    }
 
-    atomic.AddUint32(&db.usesRam, uint32(len(buffer)))
-}
+    lf.mxFileOps.Lock()
+    defer lf.mxFileOps.Unlock()
 
-func reallocate() []byte {
-    return make([]byte, 0, rawFileSize)
+    _, err := lf.file.Write(buffer)
+    if err != nil {
+        return err
+    }
+
+    lf.lastOps = time.Now()
+    return nil
 }
 
 func (lf *logFile) walk(f func(line []byte)) error {
     lf.mxFileOps.Lock()
     defer lf.mxFileOps.Unlock()
+
+    if lf.file == nil {
+        err := lf.open()
+        if err != nil {
+            return err
+        }
+    }
+
+    lf.lastOps = time.Now()
     lf.file.Seek(0, 0)
-    //r, err := gzip.NewReader(lf.file)
-    //if err != nil {
-    //    return err
-    //}
+
     scanner := bufio.NewScanner(lf.file)
     scanner.Buffer(make([]byte, 0, capScannerBufferSize), maxScannerBufferSize)
     for scanner.Scan() {
         f(scanner.Bytes())
     }
+
     return scanner.Err()
 }
 
-func (lf *logFile) open() error {
+func (lf *logFile) open() (err error) {
     fmt.Printf("open log, %d\n", lf.key)
-    var err error
     lf.file, err = os.OpenFile(lf.location, flagDefault, permDefault)
     if e, ok := err.(*os.PathError); ok && e.Err == syscall.ERROR_PATH_NOT_FOUND {
+
         err := os.MkdirAll(filepath.Dir(lf.location), permDefault)
         if err != nil {
             return err
         }
+
         lf.file, err = os.OpenFile(lf.location, flagDefault, permDefault)
         if err != nil {
             return err
         }
     }
-    lf.openTime = time.Now()
+
     return nil
-}
-
-func (lf *logFile) margeFromRam() {
-    if len(lf.ram) > 0 {
-        lf.mxFileOps.Lock()
-        {
-            lf.mxRAMOps.Lock()
-            {
-                n, err := lf.file.Write(lf.ram)
-                if err != nil {
-                    lf.mxRAMOps.Unlock()
-                    lf.mxFileOps.Unlock()
-                    close(lf.done)
-                    return
-                }
-                atomic.AddUint32(&db.usesRam, -uint32(n))
-                lf.lastMerge = time.Now()
-                lf.ram = reallocate()
-            }
-            lf.mxRAMOps.Unlock()
-        }
-        lf.mxFileOps.Unlock()
-    }
-}
-
-func (lf *logFile) pusher() {
-    doneTimer := make(chan struct{})
-    timeTrigger := time.NewTicker(mergeSpeedRate)
-
-    go func() {
-        for {
-            select {
-            case <-timeTrigger.C:
-                lf.margeFromRam()
-            case <-doneTimer:
-                return
-            }
-        }
-    }()
-
-    <-lf.done
-    doneTimer <- struct{}{}
-    if lf.file != nil {
-        lf.file.Close()
-    }
 }
