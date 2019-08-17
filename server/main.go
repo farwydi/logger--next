@@ -3,9 +3,9 @@ package main
 import (
     "bytes"
     "compress/gzip"
+    "fmt"
     "github.com/gin-gonic/gin"
     "golang.org/x/net/context"
-    "log"
     "net/http"
     "os"
     "os/signal"
@@ -20,6 +20,7 @@ var db = &database{
 }
 
 func main() {
+    gin.SetMode(gin.ReleaseMode)
     r := gin.Default()
 
     var gzPool sync.Pool
@@ -54,7 +55,7 @@ func main() {
     go func() {
         // service connections
         if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            log.Fatalf("listen: %s\n", err)
+            fmt.Fprintf(os.Stderr, "Listen: %s\n", err)
         }
     }()
 
@@ -62,18 +63,17 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
     <-quit
-    log.Println("Shutdown Server ...")
+    fmt.Println("Shutdown server ...")
 
     ctx, cancel := context.WithTimeout(context.Background(), time.Second)
     defer cancel()
     if err := srv.Shutdown(ctx); err != nil {
-        log.Fatal("Server Shutdown:", err)
+        fmt.Fprintf(os.Stderr, "Server shutdown: %s", err)
     }
 
     select {
     case <-ctx.Done():
-        log.Println("timeout Shutdown")
+        fmt.Println("Timeout shutdown")
     }
-
-    log.Println("Server exiting")
+    fmt.Println("Server exiting")
 }
