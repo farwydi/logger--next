@@ -19,7 +19,7 @@ type database struct {
     basePath    string
     logFiles    map[uint32]*logFile
     done        chan struct{}
-    mx          sync.Mutex
+    mx          sync.RWMutex
     shutdownNow bool
 }
 
@@ -90,9 +90,10 @@ func (d *database) initLogFile(service, file string, key uint32) (lf *logFile, e
 func (d *database) resolveLogFile(service, file string) (lf *logFile, err error) {
     key := resolveKey(service, file)
 
-    d.mx.Lock()
+    d.mx.RLock()
     lf, found := d.logFiles[key]
-    d.mx.Unlock()
+    d.mx.RUnlock()
+
     if !found {
         lf, err = d.initLogFile(service, file, key)
         if err != nil {
