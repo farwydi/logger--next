@@ -11,6 +11,9 @@ import (
     "time"
 )
 
+// 50 Kb
+const readBufferSize = 50 << (10 * 1)
+
 // 4 Mb
 const rawFileSize = 4 << (10 * 2)
 const rateWriteSpeed = time.Second
@@ -23,6 +26,7 @@ type logFile struct {
     mxRAMOps  sync.Mutex
     location  string
     openTime  time.Time
+    lastMerge time.Time
     file      *os.File
     ram       []byte
     key       uint32
@@ -49,7 +53,13 @@ func reallocate() []byte {
 func (lf *logFile) walk(f func(line []byte)) error {
     lf.mxFileOps.Lock()
     defer lf.mxFileOps.Unlock()
+    lf.file.Seek(0, 0)
+    //r, err := gzip.NewReader(lf.file)
+    //if err != nil {
+    //    return err
+    //}
     scanner := bufio.NewScanner(lf.file)
+    scanner.Buffer(make([]byte, 0, readBufferSize),  readBufferSize)
     for scanner.Scan() {
         f(scanner.Bytes())
     }
@@ -88,6 +98,7 @@ func (lf *logFile) margeFromRam() {
                     return
                 }
                 atomic.AddUint32(&db.usesRam, -uint32(n))
+                lf.lastMerge = time.Now()
                 lf.ram = reallocate()
             }
             lf.mxRAMOps.Unlock()

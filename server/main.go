@@ -67,7 +67,7 @@ func main() {
     srv.SetKeepAlivesEnabled(false)
     db.shutdown()
 
-    ctx, cancel := context.WithTimeout(context.Background(), time.Second * 13)
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
     defer cancel()
     if err := srv.Shutdown(ctx); err != nil {
         fmt.Fprintf(os.Stderr, "%v Could not gracefully shutdown the server: %s", time.Now(), err)

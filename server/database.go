@@ -11,7 +11,7 @@ import (
 )
 
 const maxOpenFilesDefault = 1000000
-const rateGCRam = time.Second
+const rateGCRam = time.Second * 10
 
 // 4 Gb
 const maxRamBuffer = 4 << 10 * 3
@@ -68,7 +68,6 @@ func newDatabase() *database {
             lf.close()
         }
         db.logFiles = nil
-        fmt.Printf("database done\n")
     }()
 
     return db

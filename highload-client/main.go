@@ -1,7 +1,6 @@
 package main
 
 import (
-    "compress/gzip"
     "fmt"
     "github.com/Pallinder/go-randomdata"
     "github.com/valyala/fasthttp"
@@ -102,7 +101,8 @@ func (fw *NetworkWriter) Sync() error {
     resp := fasthttp.AcquireResponse()
     defer fasthttp.ReleaseResponse(resp)
 
-    fasthttp.WriteGzipLevel(req.BodyWriter(), fw.buffer, gzip.BestSpeed)
+    //fasthttp.WriteGzipLevel(req.BodyWriter(), fw.buffer, gzip.BestSpeed)
+    req.SetBody(fw.buffer)
     err := fw.c.DoTimeout(req, resp, time.Millisecond*340)
     if err != nil {
         return err
@@ -132,7 +132,7 @@ func main() {
     )
 
     logger.Info("New message", zap.Int("int", 15))
-    for i := 0; i < 100; i++ {
+    for i := 0; i < 1000; i++ {
         logger.Info(randomdata.Address(), zap.Int("int", rand.Int()))
     }
 }
