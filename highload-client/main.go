@@ -97,6 +97,7 @@ func (fw *NetworkWriter) Sync() error {
     defer fasthttp.ReleaseRequest(req)
     req.SetRequestURI(fw.url)
     req.Header.SetMethod(fasthttp.MethodPut)
+    req.Header.Set(fasthttp.HeaderConnection, "keep-alive")
 
     resp := fasthttp.AcquireResponse()
     defer fasthttp.ReleaseResponse(resp)
@@ -131,7 +132,6 @@ func main() {
     )
 
     logger.Info("New message", zap.Int("int", 15))
-    time.Sleep(time.Second * 2)
     for i := 0; i < 100; i++ {
         logger.Info(randomdata.Address(), zap.Int("int", rand.Int()))
     }

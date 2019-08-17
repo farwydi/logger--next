@@ -30,7 +30,7 @@ type logFile struct {
 }
 
 func (lf *logFile) close() {
-    fmt.Printf("close log, %d", lf.key)
+    fmt.Printf("close log, %d\n", lf.key)
     close(lf.done)
 }
 
@@ -57,7 +57,7 @@ func (lf *logFile) walk(f func(line []byte)) error {
 }
 
 func (lf *logFile) open() error {
-    fmt.Printf("open log, %d", lf.key)
+    fmt.Printf("open log, %d\n", lf.key)
     var err error
     lf.file, err = os.OpenFile(lf.location, flagDefault, permDefault)
     if e, ok := err.(*os.PathError); ok && e.Err == syscall.ERROR_PATH_NOT_FOUND {

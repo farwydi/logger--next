@@ -68,6 +68,7 @@ func newDatabase() *database {
             lf.close()
         }
         db.logFiles = nil
+        fmt.Printf("database done\n")
     }()
 
     return db

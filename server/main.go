@@ -64,17 +64,13 @@ func main() {
 
     <-quit
     fmt.Printf("%v Shutdown server ...\n", time.Now())
+    srv.SetKeepAlivesEnabled(false)
     db.shutdown()
 
-    ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second * 13)
     defer cancel()
     if err := srv.Shutdown(ctx); err != nil {
-        fmt.Fprintf(os.Stderr, "%v Server shutdown: %s", time.Now(), err)
-    }
-
-    select {
-    case <-ctx.Done():
-        fmt.Fprintf(os.Stderr, "%v Timeout shutdown\n", time.Now())
+        fmt.Fprintf(os.Stderr, "%v Could not gracefully shutdown the server: %s", time.Now(), err)
     }
     fmt.Printf("%v Server exiting\n", time.Now())
 }
