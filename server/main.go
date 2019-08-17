@@ -23,6 +23,8 @@ func main() {
     gin.SetMode(gin.ReleaseMode)
     r := gin.Default()
 
+    go db.controlRam()
+
     var gzPool sync.Pool
     gzPool.New = func() interface{} {
         return new(gzip.Reader)
@@ -65,6 +67,7 @@ func main() {
 
     <-quit
     fmt.Printf("%v Shutdown server ...\n", time.Now())
+    db.shutdown()
 
     ctx, cancel := context.WithTimeout(context.Background(), time.Second)
     defer cancel()

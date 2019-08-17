@@ -2,6 +2,7 @@ package main
 
 import (
     "bytes"
+    "errors"
     "path/filepath"
     "sync"
     "sync/atomic"
@@ -9,25 +10,61 @@ import (
 )
 
 const maxOpenFilesDefault = 1000000
+const rateGCRam = time.Minute
 
 // 4 Gb
 const maxRamBuffer = 4 << 10 * 3
 
+var (
+    ErrShutdownNow = errors.New("shutdown now")
+)
+
 type database struct {
-    usesRam  uint32
-    basePath string
-    logFiles map[uint32]*logFile
-    mx       sync.Mutex
+    usesRam     uint32
+    basePath    string
+    logFiles    map[uint32]*logFile
+    done        chan struct{}
+    mx          sync.Mutex
+    shutdownNow bool
+}
+
+func (d *database) shutdown() {
+    d.shutdownNow = true
+    close(d.done)
 }
 
 func (d *database) controlRam() {
-    usesRam := atomic.LoadUint32(&d.usesRam)
-    if usesRam > maxRamBuffer {
-        d.closeOneOpenLogFile()
+    doneTimer := make(chan struct{})
+    timeGCRam := time.NewTimer(rateGCRam)
+
+    go func() {
+        for {
+            select {
+            case <-timeGCRam.C:
+                usesRam := atomic.LoadUint32(&d.usesRam)
+                for usesRam > maxRamBuffer {
+                    d.closeOneOldOpenLogFile()
+                    usesRam = atomic.LoadUint32(&d.usesRam)
+                }
+            case <-doneTimer:
+                return
+            }
+        }
+    }()
+
+    <-d.done
+    doneTimer <- struct{}{}
+
+    for _, lf := range d.logFiles {
+        lf.close()
     }
+    d.logFiles = nil
 }
 
-func (d *database) closeOneOpenLogFile() {
+func (d *database) closeOneOldOpenLogFile() {
+    db.mx.Lock()
+    defer db.mx.Unlock()
+
     var lfLastOpen time.Time
     var keyToClose uint32
     for k, lf := range d.logFiles {
@@ -44,7 +81,7 @@ func (d *database) initLogFile(service, file string, key uint32) (lf *logFile, e
     defer db.mx.Unlock()
 
     if len(d.logFiles) > maxOpenFilesDefault {
-        d.closeOneOpenLogFile()
+        d.closeOneOldOpenLogFile()
     }
 
     lf = &logFile{
@@ -82,6 +119,10 @@ func (d *database) resolveLogFile(service, file string) (lf *logFile, err error)
 }
 
 func (d *database) registerBuffer(service, file string, buffer *bytes.Buffer) error {
+    if d.shutdownNow {
+        return ErrShutdownNow
+    }
+
     lf, err := d.resolveLogFile(service, file)
     if err != nil {
         return err
