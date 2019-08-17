@@ -59,7 +59,7 @@ func (lf *logFile) walk(f func(line []byte)) error {
     //    return err
     //}
     scanner := bufio.NewScanner(lf.file)
-    scanner.Buffer(make([]byte, 0, readBufferSize),  readBufferSize)
+    scanner.Buffer(make([]byte, 0, 100),  readBufferSize)
     for scanner.Scan() {
         f(scanner.Bytes())
     }
