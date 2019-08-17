@@ -2,6 +2,7 @@ package main
 
 import (
     "bufio"
+    "fmt"
     "os"
     "path/filepath"
     "sync"
@@ -29,6 +30,7 @@ type logFile struct {
 }
 
 func (lf *logFile) close() {
+    fmt.Printf("close log, %d", lf.key)
     close(lf.done)
 }
 
@@ -55,6 +57,7 @@ func (lf *logFile) walk(f func(line []byte)) error {
 }
 
 func (lf *logFile) open() error {
+    fmt.Printf("open log, %d", lf.key)
     var err error
     lf.file, err = os.OpenFile(lf.location, flagDefault, permDefault)
     if e, ok := err.(*os.PathError); ok && e.Err == syscall.ERROR_PATH_NOT_FOUND {
@@ -95,7 +98,7 @@ func (lf *logFile) margeFromRam() {
 
 func (lf *logFile) pusher() {
     doneTimer := make(chan struct{})
-    timeTrigger := time.NewTimer(rateWriteSpeed)
+    timeTrigger := time.NewTicker(rateWriteSpeed)
 
     go func() {
         for {

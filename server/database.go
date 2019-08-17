@@ -3,6 +3,7 @@ package main
 import (
     "bytes"
     "errors"
+    "fmt"
     "path/filepath"
     "sync"
     "sync/atomic"
@@ -10,7 +11,7 @@ import (
 )
 
 const maxOpenFilesDefault = 1000000
-const rateGCRam = time.Minute
+const rateGCRam = time.Second
 
 // 4 Gb
 const maxRamBuffer = 4 << 10 * 3
@@ -33,32 +34,43 @@ func (d *database) shutdown() {
     close(d.done)
 }
 
-func (d *database) controlRam() {
-    doneTimer := make(chan struct{})
-    timeGCRam := time.NewTimer(rateGCRam)
+func newDatabase() *database {
+    var db = &database{
+        logFiles: make(map[uint32]*logFile),
+        basePath: "logs",
+        done:     make(chan struct{}),
+    }
 
     go func() {
-        for {
-            select {
-            case <-timeGCRam.C:
-                usesRam := atomic.LoadUint32(&d.usesRam)
-                for usesRam > maxRamBuffer {
-                    d.closeOneOldOpenLogFile()
-                    usesRam = atomic.LoadUint32(&d.usesRam)
+        doneTimer := make(chan struct{})
+        timeGCRam := time.NewTicker(rateGCRam)
+
+        go func() {
+            for {
+                select {
+                case <-timeGCRam.C:
+                    usesRam := atomic.LoadUint32(&db.usesRam)
+                    fmt.Printf("ram: %d\n", usesRam)
+                    for usesRam > maxRamBuffer {
+                        db.closeOneOldOpenLogFile()
+                        usesRam = atomic.LoadUint32(&db.usesRam)
+                    }
+                case <-doneTimer:
+                    return
                 }
-            case <-doneTimer:
-                return
             }
+        }()
+
+        <-db.done
+        doneTimer <- struct{}{}
+
+        for _, lf := range db.logFiles {
+            lf.close()
         }
+        db.logFiles = nil
     }()
 
-    <-d.done
-    doneTimer <- struct{}{}
-
-    for _, lf := range d.logFiles {
-        lf.close()
-    }
-    d.logFiles = nil
+    return db
 }
 
 func (d *database) closeOneOldOpenLogFile() {

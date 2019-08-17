@@ -14,16 +14,13 @@ import (
     "time"
 )
 
-var db = &database{
-    logFiles: make(map[uint32]*logFile),
-    basePath: "logs",
-}
+var db *database
 
 func main() {
     gin.SetMode(gin.ReleaseMode)
     r := gin.Default()
 
-    go db.controlRam()
+    db = newDatabase()
 
     var gzPool sync.Pool
     gzPool.New = func() interface{} {
@@ -77,7 +74,7 @@ func main() {
 
     select {
     case <-ctx.Done():
-        fmt.Printf("%v Timeout shutdown\n", time.Now())
+        fmt.Fprintf(os.Stderr, "%v Timeout shutdown\n", time.Now())
     }
     fmt.Printf("%v Server exiting\n", time.Now())
 }
