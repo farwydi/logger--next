@@ -12,12 +12,12 @@ var (
     ErrFileNotOpen = errors.New("file not open")
 )
 
-type logFile struct {
+type logFilex struct {
     f *os.File
     c sync.RWMutex
 }
 
-func (lf *logFile) read(f func(r io.Reader) error) error {
+func (lf *logFilex) read(f func(r io.Reader) error) error {
     lf.c.RLock()
     defer lf.c.RUnlock()
 
@@ -29,7 +29,7 @@ func (lf *logFile) read(f func(r io.Reader) error) error {
     return ErrFileNotOpen
 }
 
-func (lf *logFile) append(r io.Reader) (n int, err error) {
+func (lf *logFilex) append(r io.Reader) (n int, err error) {
     lf.c.Lock()
     defer lf.c.Unlock()
 

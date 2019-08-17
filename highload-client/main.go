@@ -1,61 +1,113 @@
 package main
 
 import (
+    "compress/gzip"
     "fmt"
     "github.com/Pallinder/go-randomdata"
     "github.com/valyala/fasthttp"
     "go.uber.org/zap"
     "go.uber.org/zap/zapcore"
     "math/rand"
+    "net"
+    "os"
+    "sync"
     "time"
 )
 
-func NewWriter(url string) *FastWrite {
-    req := &fasthttp.Request{}
-    req.SetRequestURI("http://localhost:4256/save_log")
-    req.Header.SetMethod(fasthttp.MethodPut)
+// 50 Kb
+const bufferSize = 50 << (10 * 1)
+const ct = "application/json; charset=utf-8"
 
-    return &FastWrite{
+func NewWriter(url, addr string, rate time.Duration) *NetworkWriter {
+    fw := &NetworkWriter{
         c: &fasthttp.HostClient{
-            Addr:     "localhost:4256",
-            MaxConns: 20,
+            Addr:                     addr,
+            MaxConns:                 10,
+            MaxIdleConnDuration:      time.Second * 10,
+            NoDefaultUserAgentHeader: true,
+            Dial: func(addr string) (conn net.Conn, e error) {
+                //fmt.Println("Dial")
+                return fasthttp.Dial(addr)
+            },
         },
-        req:    req,
-        buffer: make([]byte, 50000),
+        url:    url,
+        buffer: reallocate(),
     }
+
+    if rate != 0 {
+        fw.pusher = time.NewTicker(rate)
+        fw.done = make(chan struct{})
+        go func() {
+            for {
+                select {
+                case <-fw.pusher.C:
+                    err := fw.Sync()
+                    if err != nil {
+                        fmt.Fprintf(os.Stderr, "%v NetworkWriter.Sync error: %v\n", time.Now(), err)
+                    }
+                case <-fw.done:
+                    return
+                }
+            }
+        }()
+    }
+
+    return fw
 }
 
-func RegisterSync(fw *FastWrite) {
-    go func() {
-        fw.Sync()
-    }()
+func reallocate() []byte {
+    return make([]byte, 0, bufferSize)
 }
 
-type FastWrite struct {
+type NetworkWriter struct {
     c      *fasthttp.HostClient
-    req    *fasthttp.Request
+    url    string
     buffer []byte
+    mx     sync.Mutex
+    pusher *time.Ticker
+    done   chan struct{}
 }
 
-func (fw *FastWrite) max() int {
-    return 50000
-}
-
-func (fw *FastWrite) Write(p []byte) (n int, err error) {
-    if len(fw.buffer) + len(p) > fw.max() {
-        fw.buffer = p
-        return 0, nil
+func (fw *NetworkWriter) Stop() {
+    if fw.pusher != nil {
+        fw.pusher.Stop()
+        fw.done <- struct{}{}
+        close(fw.done)
     }
 
+    err := fw.Sync()
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "%v NetworkWriter.Stop error: failed Sync, %v\n", time.Now(), err)
+        os.Stderr.Write(fw.buffer)
+        fmt.Fprintf(os.Stderr, "%v NetworkWriter.Stop done buffer dump\n", time.Now())
+    }
+}
+
+func (fw *NetworkWriter) Write(p []byte) (n int, err error) {
+    fw.mx.Lock()
+    defer fw.mx.Unlock()
     fw.buffer = append(fw.buffer, p...)
     return len(p), nil
 }
 
-func (fw *FastWrite) Sync() error {
+func (fw *NetworkWriter) Sync() error {
+    fw.mx.Lock()
+    defer fw.mx.Unlock()
+
+    if !(len(fw.buffer) > 0) {
+        return nil
+    }
+
+    req := fasthttp.AcquireRequest()
+    defer fasthttp.ReleaseRequest(req)
+    req.SetRequestURI(fw.url)
+    req.Header.SetMethod(fasthttp.MethodPut)
+
     resp := fasthttp.AcquireResponse()
     defer fasthttp.ReleaseResponse(resp)
-    fw.req.SetBody(fw.buffer)
-    err := fw.c.DoTimeout(fw.req, resp, time.Millisecond*120)
+
+    fasthttp.WriteGzipLevel(req.BodyWriter(), fw.buffer, gzip.BestSpeed)
+    err := fw.c.DoTimeout(req, resp, time.Millisecond*340)
     if err != nil {
         return err
     }
@@ -67,21 +119,25 @@ func (fw *FastWrite) Sync() error {
         )
     }
 
+    fw.buffer = reallocate()
     return nil
 }
 
 func main() {
+    fw := NewWriter("http://localhost:4256/save_log/test/mainxx", "localhost:4256", time.Second)
+    defer fw.Stop()
+
     logger := zap.New(
         zapcore.NewCore(
             zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-            NewWriter("http://localhost:4256/save_log"),
+            fw,
             zap.NewAtomicLevelAt(zap.InfoLevel),
         ),
     )
 
     logger.Info("New message", zap.Int("int", 15))
-
-    for i := 0; i < 100000; i++ {
+    time.Sleep(time.Second * 2)
+    for i := 0; i < 100; i++ {
         logger.Info(randomdata.Address(), zap.Int("int", rand.Int()))
     }
 }

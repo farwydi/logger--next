@@ -1,68 +1,79 @@
 package main
 
 import (
-    "bufio"
     "bytes"
+    "compress/gzip"
     "github.com/gin-gonic/gin"
-    "io"
+    "golang.org/x/net/context"
+    "log"
+    "net/http"
     "os"
-    "regexp"
+    "os/signal"
+    "sync"
+    "syscall"
+    "time"
 )
 
-func handleLine(line string) []byte {
-    matched, _ := regexp.MatchString("Lincoln", line)
-
-    if matched {
-        return []byte(line)
-    }
-
-    return nil
+var db = &database{
+    logFiles: make(map[uint32]*logFile),
+    basePath: "logs",
 }
 
 func main() {
     r := gin.Default()
 
-    f, err := os.OpenFile("logfile.db", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
-    if err != nil {
-        panic(err)
+    var gzPool sync.Pool
+    gzPool.New = func() interface{} {
+        return new(gzip.Reader)
     }
 
-    lf := &logFile{
-        f: f,
-    }
+    r.PUT("/save_log/:service/:file", func(c *gin.Context) {
+        buffer := bufferPool.Get().(*bytes.Buffer)
+        defer releaseBuffer(buffer)
 
-    r.PUT("/save_log", func(c *gin.Context) {
-        lf.append(c.Request.Body)
-        c.Status(200)
-    })
-
-    r.GET("logs", func(c *gin.Context) {
-        var logsLine [][]byte
-
-        err := lf.read(func(r io.Reader) error {
-            scanner := bufio.NewScanner(r)
-
-            for scanner.Scan() {
-                line := handleLine(scanner.Text())
-                if line != nil {
-                    logsLine = append(logsLine, line)
-                }
-            }
-
-            return scanner.Err()
-        })
-
+        _, err := buffer.ReadFrom(c.Request.Body)
         if err != nil {
-            c.JSON(500, c.Error(err).JSON())
+            c.Status(500)
             return
         }
 
-        c.Header("Content-Type", "application/json; charset=utf-8")
-        c.Writer.WriteHeader(200)
-        c.Writer.Write([]byte("["))
-        c.Writer.Write(bytes.Join(logsLine, []byte(",")))
-        c.Writer.Write([]byte("]"))
+        db.registerBuffer(c.Param("service"), c.Param("file"), buffer)
+        c.Status(200)
     })
 
-    r.Run(":4256")
+    getLogsImpl(r)
+
+    srv := &http.Server{
+        Addr:         ":4256",
+        Handler:      r,
+        ReadTimeout:  time.Second,
+        WriteTimeout: 500 * time.Millisecond,
+        IdleTimeout:  12 * time.Second,
+    }
+
+    go func() {
+        // service connections
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Fatalf("listen: %s\n", err)
+        }
+    }()
+
+    quit := make(chan os.Signal)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+    <-quit
+    log.Println("Shutdown Server ...")
+
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+    defer cancel()
+    if err := srv.Shutdown(ctx); err != nil {
+        log.Fatal("Server Shutdown:", err)
+    }
+
+    select {
+    case <-ctx.Done():
+        log.Println("timeout Shutdown")
+    }
+
+    log.Println("Server exiting")
 }
