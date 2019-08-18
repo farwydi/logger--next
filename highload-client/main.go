@@ -132,7 +132,8 @@ func main() {
     )
 
     logger.Info("New message", zap.Int("int", 15))
-    for i := 0; i < 1000; i++ {
+    for i := 0; i < 1572864; i++ {
         logger.Info(randomdata.Address(), zap.Int("int", rand.Int()))
+        time.Sleep(time.Nanosecond)
     }
 }

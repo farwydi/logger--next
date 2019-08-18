@@ -25,7 +25,7 @@ const flagDefault = os.O_CREATE | os.O_RDWR | os.O_APPEND
 const permDefault = 0644
 
 type logFile struct {
-    mx       sync.RWMutex
+    mx       sync.Mutex
     location string
     lastOps  time.Time
     zero     *os.File
@@ -78,9 +78,6 @@ func (lf *logFile) pathByK(k int) string {
 }
 
 func (lf *logFile) walkByK(k int, f func(line []byte)) error {
-    lf.mx.RLock()
-    defer lf.mx.RUnlock()
-
     reader, err := os.Open(lf.pathByK(k))
     if err != nil {
         return err
