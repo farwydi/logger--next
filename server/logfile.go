@@ -24,33 +24,33 @@ const flagDefault = os.O_CREATE | os.O_RDWR | os.O_APPEND
 const permDefault = 0644
 
 type logFile struct {
-    mxFileOps sync.Mutex
-    location  string
-    lastOps   time.Time
-    file      *os.File
-    key       uint32
+    mx       sync.RWMutex
+    location string
+    lastOps  time.Time
+    writer   *os.File
+    key      uint32
 }
 
 func (lf *logFile) close() {
     fmt.Printf("close log, %d\n", lf.key)
 
-    if lf.file != nil {
-        lf.file.Close()
+    if lf.writer != nil {
+        lf.writer.Close()
     }
 }
 
 func (lf *logFile) register(buffer []byte) error {
-    if lf.file == nil {
+    lf.mx.Lock()
+    defer lf.mx.Unlock()
+
+    if lf.writer == nil {
         err := lf.open()
         if err != nil {
             return err
         }
     }
 
-    lf.mxFileOps.Lock()
-    defer lf.mxFileOps.Unlock()
-
-    _, err := lf.file.Write(buffer)
+    _, err := lf.writer.Write(buffer)
     if err != nil {
         return err
     }
@@ -60,20 +60,19 @@ func (lf *logFile) register(buffer []byte) error {
 }
 
 func (lf *logFile) walk(f func(line []byte)) error {
-    lf.mxFileOps.Lock()
-    defer lf.mxFileOps.Unlock()
+    lf.mx.RLock()
+    defer lf.mx.RUnlock()
 
-    if lf.file == nil {
-        err := lf.open()
-        if err != nil {
-            return err
-        }
+    reader, err := os.Open(lf.location)
+    if err != nil {
+        return err
     }
+    defer reader.Close()
 
     lf.lastOps = time.Now()
-    lf.file.Seek(0, 0)
+    lf.writer.Seek(0, 0)
 
-    scanner := bufio.NewScanner(lf.file)
+    scanner := bufio.NewScanner(reader)
     scanner.Buffer(make([]byte, 0, capScannerBufferSize), maxScannerBufferSize)
     for scanner.Scan() {
         f(scanner.Bytes())
@@ -84,7 +83,7 @@ func (lf *logFile) walk(f func(line []byte)) error {
 
 func (lf *logFile) open() (err error) {
     fmt.Printf("open log, %d\n", lf.key)
-    lf.file, err = os.OpenFile(lf.location, flagDefault, permDefault)
+    lf.writer, err = os.OpenFile(lf.location, flagDefault, permDefault)
     if e, ok := err.(*os.PathError); ok && e.Err == syscall.ERROR_PATH_NOT_FOUND {
 
         err := os.MkdirAll(filepath.Dir(lf.location), permDefault)
@@ -92,7 +91,7 @@ func (lf *logFile) open() (err error) {
             return err
         }
 
-        lf.file, err = os.OpenFile(lf.location, flagDefault, permDefault)
+        lf.writer, err = os.OpenFile(lf.location, flagDefault, permDefault)
         if err != nil {
             return err
         }
