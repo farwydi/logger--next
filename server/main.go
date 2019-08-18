@@ -14,11 +14,18 @@ import (
 
 var db *database
 
+func init()  {
+    var err error
+
+    db, err = newDatabase()
+    if err != nil {
+        panic(err)
+    }
+}
+
 func main() {
     gin.SetMode(gin.ReleaseMode)
     r := gin.Default()
-
-    db = newDatabase()
 
     r.PUT("/save_log/:service/:file", func(c *gin.Context) {
         buffer := bufferPool.Get().(*bytes.Buffer)

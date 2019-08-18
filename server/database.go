@@ -3,8 +3,10 @@ package main
 import (
     "bytes"
     "errors"
+    "os"
     "path/filepath"
     "sync"
+    "syscall"
     "time"
 )
 
@@ -29,7 +31,7 @@ func (d *database) shutdown() {
     close(d.done)
 }
 
-func newDatabase() *database {
+func newDatabase() (*database, error) {
     var db = &database{
         logFiles: make(map[uint32]*logFile),
         basePath: "logs",
@@ -37,6 +39,15 @@ func newDatabase() *database {
         head: &headDb{
             headFile: filepath.Join("logs", "head.db"),
         },
+    }
+
+    rows, err := db.head.all()
+    if e, ok := err.(*os.PathError); ok && e.Err != syscall.ERROR_FILE_NOT_FOUND {
+        return nil, err
+    }
+
+    for _, v := range rows {
+        db.head.append(v)
     }
 
     go func() {
@@ -63,7 +74,7 @@ func newDatabase() *database {
         db.logFiles = nil
     }()
 
-    return db
+    return db, nil
 }
 
 func (d *database) closeLongOpenLogFile() {
