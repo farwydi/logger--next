@@ -39,6 +39,14 @@ func (lf *logFile) close() {
     }
 }
 
+func (lf *logFile) since(d time.Duration) bool {
+    if lf.writer != nil {
+        return time.Since(lf.lastOps) > d
+    }
+
+    return false
+}
+
 func (lf *logFile) register(buffer []byte) error {
     lf.mx.Lock()
     defer lf.mx.Unlock()

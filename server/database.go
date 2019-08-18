@@ -67,7 +67,7 @@ func (d *database) closeLongOpenLogFile() {
     defer db.mx.Unlock()
 
     for k, lf := range d.logFiles {
-        if lf.file != nil && time.Since(lf.lastOps) > maxOpenLogDuration {
+        if lf.since(maxOpenLogDuration) {
             lf.close()
             delete(d.logFiles, k)
         }
