@@ -5,6 +5,7 @@ import (
     "encoding/json"
     "os"
     "sync"
+    "syscall"
 )
 
 type Row struct {
@@ -74,6 +75,9 @@ func (h *headDb) all() (rows []Row, err error) {
     defer h.mx.RUnlock()
 
     file, err := os.Open(h.headFile)
+    if e, ok := err.(*os.PathError); ok && e.Err == syscall.ERROR_FILE_NOT_FOUND {
+        return nil, nil
+    }
     if err != nil {
         return nil, err
     }

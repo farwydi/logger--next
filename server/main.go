@@ -27,6 +27,20 @@ func main() {
     gin.SetMode(gin.ReleaseMode)
     r := gin.Default()
 
+    r.GET("/head", func(c *gin.Context) {
+        rows, err := db.head.all()
+        if err != nil {
+            c.Status(500)
+            return
+        }
+
+        if rows == nil {
+            rows = make([]Row, 0)
+        }
+
+        c.JSON(200, rows)
+    })
+
     r.PUT("/save_log/:service/:file", func(c *gin.Context) {
         buffer := bufferPool.Get().(*bytes.Buffer)
         defer releaseBuffer(buffer)
