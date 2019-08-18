@@ -19,7 +19,7 @@ func getLogsImpl(r *gin.Engine) {
 
             c.Writer.WriteString("[")
             first := true
-            err = lf.walk(func(line []byte) {
+            err = lf.walkByK(0, func(line []byte) {
                 matched, _ := regexp.Match("Lincoln", line)
                 if matched {
                     if first {

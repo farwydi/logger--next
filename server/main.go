@@ -2,14 +2,12 @@ package main
 
 import (
     "bytes"
-    "compress/gzip"
     "fmt"
     "github.com/gin-gonic/gin"
     "golang.org/x/net/context"
     "net/http"
     "os"
     "os/signal"
-    "sync"
     "syscall"
     "time"
 )
@@ -21,11 +19,6 @@ func main() {
     r := gin.Default()
 
     db = newDatabase()
-
-    var gzPool sync.Pool
-    gzPool.New = func() interface{} {
-        return new(gzip.Reader)
-    }
 
     r.PUT("/save_log/:service/:file", func(c *gin.Context) {
         buffer := bufferPool.Get().(*bytes.Buffer)

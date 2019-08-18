@@ -2,6 +2,7 @@ package main
 
 import (
     "bufio"
+    "compress/gzip"
     "fmt"
     "os"
     "path/filepath"
@@ -52,7 +53,7 @@ func (lf *logFile) register(buffer []byte) error {
     defer lf.mx.Unlock()
 
     if lf.writer == nil {
-        err := lf.open()
+        err := lf.openZero()
         if err != nil {
             return err
         }
@@ -67,20 +68,35 @@ func (lf *logFile) register(buffer []byte) error {
     return nil
 }
 
-func (lf *logFile) walk(f func(line []byte)) error {
+func (lf *logFile) pathByK(k int) string {
+    if k == 0 {
+        return filepath.Join(lf.location, "0.log")
+    }
+
+    return filepath.Join(lf.location, fmt.Sprintf("%d.gz.log", k))
+}
+
+func (lf *logFile) walkByK(k int, f func(line []byte)) error {
     lf.mx.RLock()
     defer lf.mx.RUnlock()
 
-    reader, err := os.Open(lf.location)
+    reader, err := os.Open(lf.pathByK(k))
     if err != nil {
         return err
     }
     defer reader.Close()
 
-    lf.lastOps = time.Now()
-    lf.writer.Seek(0, 0)
+    var scanner *bufio.Scanner
+    if k > 0 {
+        gzReader, err := gzip.NewReader(reader)
+        if err != nil {
+            return err
+        }
+        scanner = bufio.NewScanner(gzReader)
+    } else  {
+        scanner = bufio.NewScanner(reader)
+    }
 
-    scanner := bufio.NewScanner(reader)
     scanner.Buffer(make([]byte, 0, capScannerBufferSize), maxScannerBufferSize)
     for scanner.Scan() {
         f(scanner.Bytes())
@@ -89,17 +105,17 @@ func (lf *logFile) walk(f func(line []byte)) error {
     return scanner.Err()
 }
 
-func (lf *logFile) open() (err error) {
+func (lf *logFile) openZero() (err error) {
     fmt.Printf("open log, %d\n", lf.key)
-    lf.writer, err = os.OpenFile(lf.location, flagDefault, permDefault)
+    lf.writer, err = os.OpenFile(lf.pathByK(0), flagDefault, permDefault)
     if e, ok := err.(*os.PathError); ok && e.Err == syscall.ERROR_PATH_NOT_FOUND {
 
-        err := os.MkdirAll(filepath.Dir(lf.location), permDefault)
+        err := os.MkdirAll(filepath.Dir(lf.pathByK(0)), permDefault)
         if err != nil {
             return err
         }
 
-        lf.writer, err = os.OpenFile(lf.location, flagDefault, permDefault)
+        lf.writer, err = os.OpenFile(lf.pathByK(0), flagDefault, permDefault)
         if err != nil {
             return err
         }

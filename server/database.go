@@ -21,6 +21,7 @@ type database struct {
     done        chan struct{}
     mx          sync.RWMutex
     shutdownNow bool
+    head        *headDb
 }
 
 func (d *database) shutdown() {
@@ -33,6 +34,7 @@ func newDatabase() *database {
         logFiles: make(map[uint32]*logFile),
         basePath: "logs",
         done:     make(chan struct{}),
+        head:     &headDb{},
     }
 
     go func() {
