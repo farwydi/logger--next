@@ -34,7 +34,9 @@ func newDatabase() *database {
         logFiles: make(map[uint32]*logFile),
         basePath: "logs",
         done:     make(chan struct{}),
-        head:     &headDb{},
+        head: &headDb{
+            headFile: filepath.Join("logs", "head.db"),
+        },
     }
 
     go func() {
@@ -82,7 +84,7 @@ func (d *database) initLogFile(service, file string, key uint32) (lf *logFile, e
 
     lf = &logFile{
         key:      key,
-        location: filepath.Join(d.basePath, service, file+".db"),
+        location: filepath.Join(d.basePath, service, file),
     }
     d.logFiles[key] = lf
 
@@ -112,6 +114,14 @@ func (d *database) registerBuffer(service, file string, buffer *bytes.Buffer) er
     }
 
     lf, err := d.resolveLogFile(service, file)
+    if err != nil {
+        return err
+    }
+
+    err = db.head.append(Row{
+        Service: service,
+        File:    file,
+    })
     if err != nil {
         return err
     }

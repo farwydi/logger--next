@@ -28,20 +28,21 @@ type logFile struct {
     mx       sync.RWMutex
     location string
     lastOps  time.Time
-    writer   *os.File
+    zero     *os.File
     key      uint32
 }
 
 func (lf *logFile) close() {
-    fmt.Printf("close log, %d\n", lf.key)
+    if lf.zero != nil {
+        lf.mx.Lock()
+        defer lf.mx.Unlock()
 
-    if lf.writer != nil {
-        lf.writer.Close()
+        lf.zero.Close()
     }
 }
 
 func (lf *logFile) since(d time.Duration) bool {
-    if lf.writer != nil {
+    if lf.zero != nil {
         return time.Since(lf.lastOps) > d
     }
 
@@ -52,14 +53,14 @@ func (lf *logFile) register(buffer []byte) error {
     lf.mx.Lock()
     defer lf.mx.Unlock()
 
-    if lf.writer == nil {
+    if lf.zero == nil {
         err := lf.openZero()
         if err != nil {
             return err
         }
     }
 
-    _, err := lf.writer.Write(buffer)
+    _, err := lf.zero.Write(buffer)
     if err != nil {
         return err
     }
@@ -106,16 +107,16 @@ func (lf *logFile) walkByK(k int, f func(line []byte)) error {
 }
 
 func (lf *logFile) openZero() (err error) {
-    fmt.Printf("open log, %d\n", lf.key)
-    lf.writer, err = os.OpenFile(lf.pathByK(0), flagDefault, permDefault)
+    p := lf.pathByK(0)
+    lf.zero, err = os.OpenFile(p, flagDefault, permDefault)
     if e, ok := err.(*os.PathError); ok && e.Err == syscall.ERROR_PATH_NOT_FOUND {
 
-        err := os.MkdirAll(filepath.Dir(lf.pathByK(0)), permDefault)
+        err := os.MkdirAll(filepath.Dir(p), permDefault)
         if err != nil {
             return err
         }
 
-        lf.writer, err = os.OpenFile(lf.pathByK(0), flagDefault, permDefault)
+        lf.zero, err = os.OpenFile(p, flagDefault, permDefault)
         if err != nil {
             return err
         }

@@ -17,44 +17,29 @@ type Row struct {
 type headDb struct {
     headFile string
     mx       sync.RWMutex
+    cacheMx  sync.RWMutex
+    cache    []uint32
 }
 
-func (h *headDb) find(key uint32) (found bool, err error) {
-    h.mx.RLock()
-    defer h.mx.RUnlock()
+func (h *headDb) find(key uint32) bool {
+    h.cacheMx.RLock()
+    defer h.cacheMx.RUnlock()
 
-    file, err := os.Open(h.headFile)
-    if err != nil {
-        return false, err
-    }
-    defer file.Close()
-
-    scanner := bufio.NewScanner(file)
-    scanner.Buffer(make([]byte, 0, 600), bufio.MaxScanTokenSize)
-    for scanner.Scan() {
-        var r Row
-
-        err = json.Unmarshal(scanner.Bytes(), &r)
-        if err != nil {
-            return false, err
-        }
-
-        if r.Key == key {
-            found = true
-            break
+    for _, v := range h.cache {
+        if v == key {
+            return true
         }
     }
 
-    return found, scanner.Err()
+    return false
 }
 
 func (h *headDb) append(r Row) error {
-    found, err := h.find(r.Key)
-    if err != nil {
-        return err
+    if r.Key == 0 {
+        r.Key = resolveKey(r.Service, r.File)
     }
 
-    if found {
+    if h.find(r.Key) {
         return nil
     }
 
@@ -76,6 +61,10 @@ func (h *headDb) append(r Row) error {
     if err != nil {
         return err
     }
+
+    h.cacheMx.Lock()
+    h.cache = append(h.cache, r.Key)
+    h.cacheMx.Unlock()
 
     return nil
 }

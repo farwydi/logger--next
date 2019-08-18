@@ -1,9 +1,7 @@
 package main
 
 import (
-    "fmt"
     "github.com/gin-gonic/gin"
-    "os"
     "regexp"
 )
 
@@ -32,7 +30,7 @@ func getLogsImpl(r *gin.Engine) {
             })
             c.Writer.WriteString("]")
             if err != nil {
-                fmt.Fprintf(os.Stderr, "%v\n", err)
+                c.Error(err)
                 c.Status(500)
                 return
             }
